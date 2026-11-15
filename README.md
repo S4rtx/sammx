@@ -1,7 +1,12 @@
 # sammx
 
+**v1.0.0** · created by [S4rtx](https://github.com/S4rtx) · [github.com/S4rtx/sammx](https://github.com/S4rtx/sammx)
+
 A Kali Linux terminal tool suite: an interactive `rich` TUI plus a headless CLI that
 detects, installs, and launches **50 curated security tools** across 7 categories.
+
+Release notes live in [CHANGELOG.md](CHANGELOG.md); the suite checks for new versions
+every time it starts.
 
 Built as a single-command replacement for "clone repo, apt install, go install, remember
 where the binary landed". Every action checks what is already present before touching the
@@ -18,6 +23,9 @@ system, and returns to the menu when the launched tool exits.
   prompts, and reports a readable reason instead of crashing when a tool fails.
 - **Per-tool actions** - launch now, or reinstall on demand.
 - **Headless mode** - `--check`, `--install 1,4,12`, `--install-category N`, `--install-all`.
+- **Update notifications** - checks GitHub for a newer release on startup and shows
+  `update vX.Y.Z available` with the exact command to run.
+- **Bundled changelog** - press `l` in the TUI (or use `--changelog`) to read release notes.
 - **Status cache** - `~/.cache/kali-suite/installed.json` (1 hour TTL, refreshable from the menu).
 
 ## Requirements
@@ -69,6 +77,9 @@ python3 main.py
 | `c` | Install one whole category |
 | `x` | Custom install - comma separated numbers, e.g. `1,4,12` |
 | `r` | Refresh installation status |
+| `u` | Check for updates now |
+| `l` | View the changelog |
+| `a` | About: version, author, repository |
 | `0` | Exit |
 
 Inside a tool panel:
@@ -91,9 +102,31 @@ python3 main.py --install-category 2         # one category
 python3 main.py --install-all                # everything missing
 python3 main.py --install-all --stop-on-error
 python3 main.py --install 11 --force         # reinstall even if detected
+python3 main.py --update-check               # is a newer release out?
+python3 main.py --changelog                  # print release notes
+python3 main.py --version                    # suite version, author, repo
 ```
 
-Exit codes: `0` success, `1` one or more installs failed, `2` unsupported environment or bad input.
+Exit codes: `0` success, `1` one or more installs failed or the update check failed,
+`2` unsupported environment or bad input.
+
+### Staying up to date
+
+Every start checks GitHub for a newer release and caches the answer for 6 hours, so the
+suite stays usable offline. When a newer tag exists the banner shows
+`update vX.Y.Z available` and a panel lists the command to run:
+
+```bash
+git pull && python3 main.py
+```
+
+Manual checks: press `u` in the menu or run `python3 main.py --update-check`. `l` opens the
+bundled changelog, including the release notes of the pending update when available.
+
+Because this repository is private, the GitHub API only answers when a token is present.
+Set `GITHUB_TOKEN` (or `GH_TOKEN`) to enable it; otherwise the check falls back to
+`git ls-remote origin` using your existing git credentials, and skips silently when neither
+is available.
 
 ## Tools
 
@@ -137,8 +170,10 @@ No files are written outside those paths.
 | --- | --- |
 | `config.py` | The 50 tool definitions: category, description, check, install steps, run command. Declarative, JSON-like, no logic. |
 | `installer.py` | Detection, prereqs, install backends, sudo handling, launch wrapper, status cache, headless CLI. |
-| `menu.py` | Rich UI: banner, category/tool tables, pagination, prompts, install flows. |
+| `menu.py` | Rich UI: banner, category/tool tables, pagination, prompts, install flows, update panel, changelog viewer. |
+| `updater.py` | Version comparison, GitHub release lookup, update cache, changelog access. |
 | `main.py` | Entry point: Python version gate, `rich` bootstrap, menu or headless dispatch. |
+| `CHANGELOG.md` | Release history, kept in sync with `config.VERSION`. |
 
 ## Adding a tool
 
@@ -173,6 +208,7 @@ Placeholders `{tools_dir}` and `{tool_dir}` are expanded before execution, and
 | `unable to locate package` | The package is not in your configured apt sources - run `sudo apt update` and check the Kali mirror |
 | `externally-managed-environment` | Only relevant to custom `pip` installs; bundled Python tools use venvs. Use a venv manually |
 | A tool opens usage text and exits | That tool needs arguments (e.g. `masscan`, `hydra`); run it directly with your flags |
+| `update check failed` | Offline, or the private repo needs credentials - export `GITHUB_TOKEN`, then press `u` |
 
 ## Disclaimer
 

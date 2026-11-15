@@ -13,10 +13,12 @@ from rich.text import Text
 
 import config
 import installer
+import updater
 
 console = Console()
 PAGE_SIZE = 15
 state: dict[int, bool] = {}
+available_update: updater.Update | None = None
 
 
 def _ask(prompt: str) -> str:
@@ -42,17 +44,24 @@ def _status(installed: bool) -> Text:
 def banner() -> None:
     console.clear()
     art = Text()
-    art.append(" KALI ", style="bold white on red")
-    art.append(" TOOL SUITE ", style="bold white on black")
-    art.append("\n", style="")
-    art.append("50 security tools - install, launch, repeat", style="dim")
+    art.append(" KALI TOOL SUITE ", style="bold white on red")
+    art.append(f" v{config.VERSION} ", style="bold white on grey30")
+    art.append("\n")
+    art.append(f"created by {config.AUTHOR}", style="bold cyan")
+    art.append("   ", style="")
+    art.append(config.GITHUB_URL, style="blue underline")
+    art.append("\n50 security tools - install, launch, repeat", style="dim")
     console.print(Panel(art, box=box.HEAVY, border_style="red", padding=(0, 2)))
+
     total = len(config.TOOLS)
     ready = sum(1 for value in state.values() if value)
-    console.print(
+    line = (
         f"[bold green]{ready}[/]/[bold]{total}[/] tools installed   "
-        f"[dim]tools dir:[/] [cyan]{config.TOOLS_DIR}[/]\n"
+        f"[dim]tools dir:[/] [cyan]{config.TOOLS_DIR}[/]"
     )
+    if available_update:
+        line += f"   [bold yellow]update v{updater.display_version(available_update.latest)} available[/]"
+    console.print(line + "\n")
 
 
 def category_table() -> Table:
@@ -100,6 +109,9 @@ def actions_table() -> Table:
         ("c", "Install a whole category"),
         ("x", "Custom install (comma separated numbers)"),
         ("r", "Refresh install status"),
+        ("u", "Check for updates"),
+        ("l", "View changelog"),
+        ("a", "About"),
         ("0", "Exit"),
     ):
         table.add_row(key, label)
@@ -308,17 +320,113 @@ def refresh_status() -> None:
     console.print("[green]Status refreshed.[/]")
 
 
+def update_panel(update: updater.Update) -> None:
+    body = Text()
+    body.append(f"v{updater.display_version(update.latest)} is available", style="bold yellow")
+    body.append(f"  (you have v{config.VERSION})\n\n", style="dim")
+    body.append("Update with:\n", style="dim")
+    body.append(f"  {updater.update_command()}\n\n", style="bold cyan")
+    if update.url:
+        body.append(update.url + "\n\n", style="blue underline")
+    body.append("Press l for the changelog, u to re-check.", style="dim")
+    console.print(
+        Panel(body, title="[bold yellow]New update available[/]", border_style="yellow")
+    )
+
+
+def updates_flow() -> None:
+    global available_update
+
+    with console.status("[cyan]Checking GitHub for updates..."):
+        remote = updater.check_for_update(force=True)
+
+    if remote is None:
+        console.print(
+            "[red]Could not check for updates.[/] "
+            "[dim]Offline, or the repository is private and no credentials are available "
+            "(set GITHUB_TOKEN).[/]"
+        )
+        _pause()
+        return
+
+    if not updater.is_newer(remote.latest):
+        available_update = None
+        console.print(f"[green]You are on the latest version (v{config.VERSION}).[/]")
+        _pause()
+        return
+
+    available_update = remote
+    update_panel(remote)
+    _pause()
+
+
+def render_markdown(text: str) -> None:
+    try:
+        from rich.markdown import Markdown
+    except ImportError:
+        console.print(text)
+        return
+    console.print(Markdown(text))
+
+
+def show_changelog() -> None:
+    text = updater.changelog_text()
+    with console.pager(styles=True):
+        render_markdown(text)
+        if available_update and available_update.notes:
+            render_markdown(
+                f"## Release notes for v{updater.display_version(available_update.latest)}\n\n"
+                f"{available_update.notes}"
+            )
+    _pause()
+
+
+def show_about() -> None:
+    grid = Table.grid(padding=(0, 2))
+    grid.add_column(style="dim", justify="right")
+    grid.add_column(style="bold white")
+
+    grid.add_row("Suite", f"{config.APP_NAME} - {config.APP_TITLE.title()}")
+    grid.add_row("Version", f"v{config.VERSION}")
+    grid.add_row("Author", config.AUTHOR)
+    grid.add_row("GitHub", f"[blue underline]{config.GITHUB_URL}[/]")
+    grid.add_row("Tools", f"{len(config.TOOLS)} in {len(config.CATEGORIES)} categories")
+    grid.add_row("Tools dir", str(config.TOOLS_DIR))
+    grid.add_row("State cache", str(installer.CACHE_FILE))
+    grid.add_row("Changelog", "press l, or --changelog on the command line")
+    grid.add_row(
+        "Update",
+        f"git pull - checked automatically every {updater.CACHE_TTL // 3600}h",
+    )
+
+    console.print(
+        Panel(
+            grid,
+            title="[bold]About[/]",
+            subtitle="[dim]authorized testing only[/]",
+            border_style="cyan",
+            padding=(1, 2),
+        )
+    )
+    _pause()
+
+
 def main() -> None:
-    global state
+    global state, available_update
 
     for problem in installer.preflight():
         console.print(f"[yellow]warning:[/] {problem}")
 
-    with console.status("[cyan]Detecting installed tools..."):
+    with console.status("[cyan]Starting up - detecting tools and checking for updates..."):
         state = installer.check_all(refresh=True)
+        available_update = updater.has_update()
 
+    announced = False
     while True:
         banner()
+        if available_update and not announced:
+            update_panel(available_update)
+            announced = True
         console.print(Panel(category_table(), title="Categories", border_style="magenta"))
         console.print(Panel(actions_table(), title="Actions", border_style="cyan"))
         choice = _ask("Selection").lower()
@@ -336,6 +444,12 @@ def main() -> None:
             custom_install_flow()
         elif choice == "r":
             refresh_status()
+        elif choice == "u":
+            updates_flow()
+        elif choice == "l":
+            show_changelog()
+        elif choice == "a":
+            show_about()
         elif choice.isdigit() and int(choice) in config.CATEGORIES:
             browse_category(int(choice))
         else:

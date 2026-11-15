@@ -53,10 +53,39 @@ def ensure_rich() -> None:
 
 def main(argv: list[str]) -> int:
     ensure_python()
+
+    import config
+    import updater
+
+    if argv and argv[0] in {"--version", "-V"}:
+        print(f"{config.APP_NAME} v{config.VERSION} by {config.AUTHOR}")
+        print(config.GITHUB_URL)
+        return 0
+
+    if argv and argv[0] == "--changelog":
+        print(updater.changelog_text())
+        return 0
+
     ensure_rich()
 
-    import menu
     import installer
+    import menu
+
+    if argv and argv[0] == "--update-check":
+        remote = updater.check_for_update(force=True)
+        if remote is None:
+            print("update check failed (offline, or no access to the private repository)")
+            return 1
+        if updater.is_newer(remote.latest):
+            print(
+                f"update available: v{updater.display_version(remote.latest)} "
+                f"(running v{config.VERSION})"
+            )
+            if remote.url:
+                print(remote.url)
+        else:
+            print(f"up to date (v{config.VERSION})")
+        return 0
 
     if argv:
         return installer.cli(argv)

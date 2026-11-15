@@ -10,6 +10,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+APP_NAME = "sammx"
+APP_TITLE = "KALI TOOL SUITE"
+VERSION = "1.0.0"
+__version__ = VERSION
+AUTHOR = "S4rtx"
+GITHUB_URL = "https://github.com/S4rtx/sammx"
+REPO = "S4rtx/sammx"
+
 TOOLS_DIR = Path.home() / "tools"
 GO_BIN = Path.home() / "go" / "bin"
 
